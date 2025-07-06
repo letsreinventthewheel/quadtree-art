@@ -4,13 +4,11 @@
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 
+#include "quad.h"
 #include "stb_image.h"
+#include "stb_ds.h"
 
-typedef struct {
-    uint8_t *data;
-    int width;
-    int height;
-} Image;
+const uint32_t PADDING = 1;
 
 typedef struct {
     uint32_t *data;
@@ -81,20 +79,32 @@ void context_deinit(SDLContext *context) {
     SDL_Quit();
 }
 
-void draw_image(const SDLContext *context, const Image *image) {
-    // clear framebuffer with black
-    for (size_t row = 0; row < context->framebuffer->height; row++) {
-        for (size_t column = 0; column < context->framebuffer->width; column++) {
-            context->framebuffer->data[row * context->framebuffer->width + column] = 0xFF000000;
+void draw_rectangle(Framebuffer *framebuffer, uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint32_t color) {
+    for (size_t row = top; row < top + height; row++) {
+        for (size_t column = left; column < left + width; column++) {
+            framebuffer->data[row * framebuffer->width + column] = color;
         }
     }
+}
 
-    for (int row = 0; row < image->height; row++) {
-        for (int column = 0; column < image->width; column++) {
-            uint32_t offset = row * image->width * 3 + column * 3;
-            uint32_t color = (0xFF << 24) | (image->data[offset] << 16) | (image->data[offset+1] << 8) | (image->data[offset+2]);
-            context->framebuffer->data[row * context->framebuffer->width + column] = color;
-        }
+void draw_image(const SDLContext *context, Quad **queue, size_t queue_idx) {
+    // clear framebuffer with black
+    draw_rectangle(context->framebuffer, 0, 0, context->framebuffer->width, context->framebuffer->height, 0xFF000000);
+
+    uint32_t queue_len = arrlen(queue);
+    for (size_t i = queue_idx; i < queue_len; i++) {
+        const Quad *quad = queue[i];
+
+        Box box = quad->boundary.box;
+        uint32_t color = (0xFF << 24) | (quad->average_color.color.red << 16) | (quad->average_color.color.green << 8) | (quad->average_color.color.blue);
+        draw_rectangle(
+            context->framebuffer,
+            box.left + PADDING,
+            box.top + PADDING,
+            box.right - box.left - PADDING,
+            box.bottom - box.top - PADDING,
+            color
+        );
     }
 
     SDL_UpdateTexture(context->texture, nullptr, context->framebuffer->data, sizeof(uint32_t) * context->framebuffer->width);
@@ -117,10 +127,15 @@ int main(int argc, char **argv) {
 
     SDLContext context;
 
-    if (!context_init(&context, image.width, image.height)) {
+    if (!context_init(&context, image.width + 1, image.height + 1)) {
         context_deinit(&context);
         return -1;
     }
+
+    Quad **queue = nullptr;
+    Quad root = quad_init_from_image(&image);
+    arrpush(queue, &root);
+    size_t queue_idx = 0;
 
     SDL_Event event;
     bool quit = false;
@@ -129,9 +144,20 @@ int main(int argc, char **argv) {
             if (event.type == SDL_EVENT_QUIT) {
                 quit = true;
             }
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                for (size_t i = 0; i < 1; i++) {
+                    Quad *quad = queue[queue_idx];
+                    queue_idx++;
+                    Children *children = quad_split(quad);
+                    arrpush(queue, &children->top_left);
+                    arrpush(queue, &children->top_right);
+                    arrpush(queue, &children->bottom_left);
+                    arrpush(queue, &children->bottom_right);
+                }
+            }
         }
 
-        draw_image(&context, &image);
+        draw_image(&context, queue, queue_idx);
     }
 
     context_deinit(&context);
