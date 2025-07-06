@@ -53,3 +53,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+.cache
+.DS_Store
+build
+compile_commands.json
