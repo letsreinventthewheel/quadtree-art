@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 
+#include "heap.h"
 #include "quad.h"
 #include "stb_image.h"
 #include "stb_ds.h"
@@ -23,17 +24,17 @@ typedef struct {
     Framebuffer *framebuffer;
 } SDLContext;
 
-bool context_init(SDLContext *context, int window_width, int window_height) {
+bool context_init(SDLContext *context, int window_width, int window_height, int image_width, int image_height) {
     context->framebuffer = malloc(sizeof(Framebuffer));
     if (!context->framebuffer) {
         fprintf(stderr, "Failed to malloc framebuffer\n");
         return false;
     }
 
-    context->framebuffer->width = window_width;
-    context->framebuffer->height = window_height;
+    context->framebuffer->width = image_width;
+    context->framebuffer->height = image_height;
 
-    context->framebuffer->data = malloc(sizeof(uint32_t) * window_height * window_width);
+    context->framebuffer->data = malloc(sizeof(uint32_t) * image_height * image_width);
     if (!context->framebuffer->data) {
         fprintf(stderr, "Failed to malloc framebuffer data\n");
         return false;
@@ -56,7 +57,7 @@ bool context_init(SDLContext *context, int window_width, int window_height) {
         return false;
     }
 
-    context->texture = SDL_CreateTexture(context->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_width, window_height);
+    context->texture = SDL_CreateTexture(context->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, image_width, image_height);
     if (!context->texture) {
         fprintf(stderr, "SDL create texture failed: %s\n", SDL_GetError());
         return false;
@@ -87,13 +88,12 @@ void draw_rectangle(Framebuffer *framebuffer, uint32_t left, uint32_t top, uint3
     }
 }
 
-void draw_image(const SDLContext *context, Quad **queue, size_t queue_idx) {
+void draw_image(const SDLContext *context, Heap *heap) {
     // clear framebuffer with black
     draw_rectangle(context->framebuffer, 0, 0, context->framebuffer->width, context->framebuffer->height, 0xFF000000);
 
-    uint32_t queue_len = arrlen(queue);
-    for (size_t i = queue_idx; i < queue_len; i++) {
-        const Quad *quad = queue[i];
+    for (size_t i = 0; i < heap->length; i++) {
+        const Quad *quad = heap->data[i].quad;
 
         Box box = quad->boundary.box;
         uint32_t color = (0xFF << 24) | (quad->average_color.color.red << 16) | (quad->average_color.color.green << 8) | (quad->average_color.color.blue);
@@ -127,15 +127,30 @@ int main(int argc, char **argv) {
 
     SDLContext context;
 
-    if (!context_init(&context, image.width + 1, image.height + 1)) {
+    int window_width = image.width + PADDING;
+    int window_height = image.height + PADDING;
+    float aspect_ratio = (float)window_width / (float)window_height;
+
+    if (window_width > 1024 || window_height > 1024) {
+        if (aspect_ratio >= 1.0) {
+            window_width = 1024;
+            window_height = 1024 / aspect_ratio;
+        } else {
+            window_height = 1024;
+            window_width = 1024 * aspect_ratio;
+        }
+    }
+
+    if (!context_init(&context, window_width + PADDING, window_height + PADDING, image.width + PADDING, image.height + PADDING)) {
         context_deinit(&context);
         return -1;
     }
 
-    Quad **queue = nullptr;
+    Heap heap;
+    heap_init(&heap);
+
     Quad root = quad_init_from_image(&image);
-    arrpush(queue, &root);
-    size_t queue_idx = 0;
+    heap_push(&heap, &root);
 
     SDL_Event event;
     bool quit = false;
@@ -145,19 +160,18 @@ int main(int argc, char **argv) {
                 quit = true;
             }
             if (event.type == SDL_EVENT_KEY_DOWN) {
-                for (size_t i = 0; i < 1; i++) {
-                    Quad *quad = queue[queue_idx];
-                    queue_idx++;
+                for (size_t i = 0; i < 10; i++) {
+                    Quad *quad = heap_pop(&heap);
                     Children *children = quad_split(quad);
-                    arrpush(queue, &children->top_left);
-                    arrpush(queue, &children->top_right);
-                    arrpush(queue, &children->bottom_left);
-                    arrpush(queue, &children->bottom_right);
+                    heap_push(&heap, &children->top_left);
+                    heap_push(&heap, &children->top_right);
+                    heap_push(&heap, &children->bottom_left);
+                    heap_push(&heap, &children->bottom_right);
                 }
             }
         }
 
-        draw_image(&context, queue, queue_idx);
+        draw_image(&context, &heap);
     }
 
     context_deinit(&context);
