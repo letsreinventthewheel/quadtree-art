@@ -4,6 +4,11 @@ A small project exploring how to decompose and render an image using a quadtree 
 
 This project evolves from a simple framebuffer renderer to a recursive quadtree system and finally to a priority guided image subdivision using a custom min heap (priority queue).
 
+<p align="center">
+  <img height="300" alt="Screenshot 2025-07-24 at 11 55 40" src="https://github.com/user-attachments/assets/966d9c73-4630-4df9-b4d9-57b549d26052" />
+  <img height="300" alt="Screenshot 2025-07-24 at 11 56 00" src="https://github.com/user-attachments/assets/169a8916-dd4d-46d9-be9d-cd6aa82901fd" />
+</p>
+
 ---
 
 ## 🎥 Watch the YouTube Series
